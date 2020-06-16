@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 namespace EonX\EasyApiToken\External;
 
-use Auth0\SDK\Helpers\Cache\CacheHandler;
-use Auth0\SDK\JWTVerifier;
+use Auth0\SDK\Helpers\JWKFetcher;
+use Auth0\SDK\Helpers\Tokens\AsymmetricVerifier;
+use Auth0\SDK\Helpers\Tokens\SignatureVerifier;
+use Auth0\SDK\Helpers\Tokens\SymmetricVerifier;
 use EonX\EasyApiToken\External\Auth0\TokenGenerator;
+use EonX\EasyApiToken\External\Auth0\TokenVerifier;
 use EonX\EasyApiToken\External\Interfaces\JwtDriverInterface;
+use Psr\SimpleCache\CacheInterface;
 
 final class Auth0JwtDriver implements JwtDriverInterface
 {
     /**
-     * @var string[]
+     * @var string
      */
-    private $allowedAlgos;
+    private $allowedAlgo;
 
     /**
      * @var string
@@ -27,11 +31,14 @@ final class Auth0JwtDriver implements JwtDriverInterface
     private $authorizedIss;
 
     /**
-     * Replace with PSR cache on upgrade to PHP-Auth0 7.
-     *
-     * @var null|\Auth0\SDK\Helpers\Cache\CacheHandler
+     * @var null|\Psr\SimpleCache\CacheInterface
      */
     private $cache;
+
+    /**
+     * @var null|int
+     */
+    private $leeway;
 
     /**
      * @var null|string|resource
@@ -50,35 +57,35 @@ final class Auth0JwtDriver implements JwtDriverInterface
      * @param string[] $authorizedIss
      * @param null|string|resource $privateKey
      * @param null|string[] $allowedAlgos
-     * @param \Auth0\SDK\Helpers\Cache\CacheHandler|null $cache Optional Cache handler.
      */
     public function __construct(
         array $validAudiences,
         array $authorizedIss,
         $privateKey = null,
         ?string $audienceForEncode = null,
-        ?array $allowedAlgos = null,
-        ?CacheHandler $cache = null
+        $allowedAlgo = null,
+        ?CacheInterface $cache = null,
+        ?int $leeway = null
     ) {
         $this->validAudiences = $validAudiences;
         $this->authorizedIss = $authorizedIss;
         $this->privateKey = $privateKey;
         $this->audienceForEncode = $audienceForEncode ?? (string)\reset($validAudiences);
-        $this->allowedAlgos = $allowedAlgos ?? ['HS256', 'RS256'];
         $this->cache = $cache;
+        $this->leeway = $leeway;
+
+        $this->setAllowedAlgo($allowedAlgo ?? 'HS256');
     }
 
     public function decode(string $token)
     {
-        $verifier = new JWTVerifier([
-            'authorized_iss' => $this->authorizedIss,
-            'cache' => $this->cache,
-            'client_secret' => $this->privateKey,
-            'supported_algs' => $this->allowedAlgos,
-            'valid_audiences' => $this->validAudiences,
-        ]);
+        $tokenVerifier = new TokenVerifier($this->validAudiences, $this->authorizedIss, $this->getSignatureVerifier());
 
-        return $verifier->verifyAndDecode($token);
+        if ($this->leeway !== null) {
+            $tokenVerifier->setLeeway($this->leeway);
+        }
+
+        return $tokenVerifier->verify($token);
     }
 
     /**
@@ -97,5 +104,34 @@ final class Auth0JwtDriver implements JwtDriverInterface
             $input['sub'] ?? null,
             $input['lifetime'] ?? null
         );
+    }
+
+    private function getSignatureVerifier(): SignatureVerifier
+    {
+        if ($this->allowedAlgo === 'HS256') {
+            return new SymmetricVerifier($this->privateKey);
+        }
+
+        return new AsymmetricVerifier(new JWKFetcher($this->cache));
+    }
+
+    /**
+     * @param string|string[] $allowedAlgo
+     */
+    private function setAllowedAlgo($allowedAlgo): void
+    {
+        if (\is_array($allowedAlgo) === false) {
+            $this->allowedAlgo = (string)$allowedAlgo;
+
+            return;
+        }
+
+        @\trigger_error(\sprintf(
+            'Passing $allowedAlgo to %s as an array is deprecated since 2.5 and will be removed in 3.0. 
+                   Pass string instead.',
+            self::class
+        ));
+
+        $this->allowedAlgo = \reset($allowedAlgo);
     }
 }

@@ -44,6 +44,8 @@ final class JwtTokenDecoder implements EasyApiTokenDecoderInterface
         try {
             return $this->jwtApiTokenFactory->createFromString($authorization);
         } catch (InvalidEasyApiTokenFromRequestException $exception) {
+            \var_dump($exception->getMessage());
+
             $this->logger->info(\sprintf('Invalid JWT token from request: "%s"', $exception->getMessage()));
 
             return null;

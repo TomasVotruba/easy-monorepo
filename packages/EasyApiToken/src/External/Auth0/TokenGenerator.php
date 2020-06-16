@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace EonX\EasyApiToken\External\Auth0;
 
-use Auth0\SDK\API\Helpers\TokenGenerator as BaseTokenGenerator;
+use Auth0\SDK\Helpers\Tokens\SymmetricVerifier;
 use EonX\EasyApiToken\External\Auth0\Interfaces\TokenGeneratorInterface;
-use Firebase\JWT\JWT;
+use Lcobucci\JWT\Builder;
+use Lcobucci\JWT\Parser;
+use Lcobucci\JWT\Signer\Hmac\Sha256;
+use Lcobucci\JWT\Signer\Key;
 
 final class TokenGenerator implements TokenGeneratorInterface
 {
@@ -42,9 +45,9 @@ final class TokenGenerator implements TokenGeneratorInterface
         ?bool $secretEncoded = null
     ): string {
         $secretEncoded = $secretEncoded ?? true;
-        $lifetime = $lifetime ?? BaseTokenGenerator::DEFAULT_LIFETIME;
-
+        $lifetime = $lifetime ?? 3600;
         $time = \time();
+
         $payload = [
             'iat' => $time,
             'scopes' => $scopes,
@@ -52,18 +55,40 @@ final class TokenGenerator implements TokenGeneratorInterface
             'aud' => $this->audience,
         ];
 
+        $builder = (new Builder())
+            ->permittedFor($this->audience)
+            ->expiresAt($time + $lifetime)
+            ->issuedAt($time)
+            ->withClaim('scopes', $scopes);
+
         if ($subject !== null) {
-            $payload['sub'] = $subject;
+            $builder->relatedTo($subject);
         }
 
         if ($roles !== null) {
-            $payload = \array_merge($payload, $roles);
+            foreach ($roles as $key => $value) {
+                $builder->withClaim($key, $value);
+            }
         }
 
-        $payload['jti'] = \md5((string)\json_encode($payload));
+        $key = new Key($this->getSecret($secretEncoded));
+        $signer = new Sha256();
+        $token = $builder->getToken($signer, $key);
 
-        $secret = $secretEncoded === true ? \base64_decode(\strtr((string)$this->secret, '-_', '+/'), true) : $this->secret;
+//        $builder->identifiedBy(\md5((string)\json_encode($payload)));
 
-        return JWT::encode($payload, (string)$secret);
+        \var_dump($token->verify($signer, $this->getSecret($secretEncoded)));
+        \var_dump((string)$token);
+
+        return (string)$token;
+    }
+
+    private function getSecret(bool $secretEncoded): string
+    {
+        if ($secretEncoded === false) {
+            return $this->secret;
+        }
+
+        return \base64_decode(\strtr((string)$this->secret, '-_', '+/'), true);
     }
 }

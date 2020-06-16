@@ -38,7 +38,7 @@
     },
     "require-dev": {
         "api-platform/core": "^2.5",
-        "auth0/auth0-php": "^5.4",
+        "auth0/auth0-php": "^7.0",
         "bugsnag/bugsnag": "^3.19",
         "bugsnag/bugsnag-laravel": "^2.17",
         "doctrine/dbal": "^2.6",
