@@ -189,8 +189,6 @@
         "illuminate/database": "To use the Illuminate Eloquent implementation",
         "illuminate/pipeline": "To use the Illuminate Pipeline implementation"
     },
-    "minimum-stability": "dev",
-    "prefer-stable": true,
     "extra": {
         "eonx_docs": {
             "finder_pattern": "readme.md",
